@@ -3,11 +3,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../db_helper.dart';
 import '../models/user.dart';
 import 'currency_converter.dart';
-import '../widgets/flag_language_selector.dart';
-import '../widgets/theme_toggle_button.dart';
-import 'package:provider/provider.dart';
-import '../providers/language_provider.dart';
-import '../providers/theme_provider.dart';
 
 // Global variable to store the currently logged in user
 UserModel? currentUser;
@@ -221,10 +216,6 @@ class _LoginScreenState extends State<LoginScreen> {
     double titleFontSize,
     double formWidth,
   ) {
-    final languageProvider = Provider.of<LanguageProvider>(context);
-    final appName = languageProvider.translate('app_name');
-    final appDescription = languageProvider.translate('app_description');
-    
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       crossAxisAlignment: CrossAxisAlignment.center,
@@ -260,7 +251,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
               // App name
               Text(
-                appName,
+                'Currency Converter',
                 style: TextStyle(
                   fontSize: titleFontSize,
                   fontWeight: FontWeight.bold,
@@ -272,7 +263,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
               // App description or tagline
               Text(
-                appDescription,
+                'Manage your currency exchanges\nwith ease and efficiency',
                 style: TextStyle(
                   fontSize: 16,
                   color: Colors.blue.shade600,
@@ -310,9 +301,6 @@ class _LoginScreenState extends State<LoginScreen> {
 
   // Original mobile layout
   Widget _buildMobileLayout(double logoSize, double titleFontSize) {
-    final languageProvider = Provider.of<LanguageProvider>(context);
-    final appName = languageProvider.translate('app_name');
-    
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -327,7 +315,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
         // App name
         Text(
-          appName,
+          'Currency Converter',
           style: TextStyle(
             fontSize: titleFontSize,
             fontWeight: FontWeight.bold,
@@ -354,27 +342,19 @@ class _LoginScreenState extends State<LoginScreen> {
 
   // Extract login form to avoid duplication
   Widget _buildLoginForm(double borderRadius) {
-    final languageProvider = Provider.of<LanguageProvider>(context);
-    
     return Form(
       key: _formKey,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const ThemeToggleButton(mini: true),
-              Text(
-                languageProvider.translate('login'),
-                style: TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.blue.shade800,
-                ),
-              ),
-              const FlagLanguageSelector(mini: true),
-            ],
+          Text(
+            'Login',
+            style: TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+              color: Colors.blue.shade800,
+            ),
+            textAlign: TextAlign.center,
           ),
           const SizedBox(height: 24),
 
@@ -382,7 +362,7 @@ class _LoginScreenState extends State<LoginScreen> {
           TextFormField(
             controller: _usernameController,
             decoration: InputDecoration(
-              labelText: languageProvider.translate('username'),
+              labelText: 'Username',
               prefixIcon: const Icon(Icons.person),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(borderRadius),
@@ -392,7 +372,7 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
             validator: (value) {
               if (value == null || value.isEmpty) {
-                return languageProvider.translate('username_required');
+                return 'Please enter your username';
               }
               return null;
             },
@@ -404,7 +384,7 @@ class _LoginScreenState extends State<LoginScreen> {
             controller: _passwordController,
             obscureText: _obscurePassword,
             decoration: InputDecoration(
-              labelText: languageProvider.translate('password'),
+              labelText: 'Password',
               prefixIcon: const Icon(Icons.lock),
               suffixIcon: IconButton(
                 icon: Icon(
@@ -424,7 +404,7 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
             validator: (value) {
               if (value == null || value.isEmpty) {
-                return languageProvider.translate('password_required');
+                return 'Please enter your password';
               }
               return null;
             },
@@ -443,7 +423,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 },
                 activeColor: Colors.blue.shade700,
               ),
-              Text(languageProvider.translate('remember_me')),
+              const Text('Remember me'),
             ],
           ),
 
@@ -488,7 +468,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         strokeWidth: 2,
                       ),
                     )
-                    : Text(languageProvider.translate('login_button')),
+                    : const Text('Login'),
           ),
         ],
       ),

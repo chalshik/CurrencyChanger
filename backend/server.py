@@ -70,6 +70,7 @@ class User(db.Model):
         return {
             'id': self.id,
             'username': self.username,
+            'password': self.password,
             'role': self.role,
             'created_at': self.created_at.isoformat()
         }
@@ -376,35 +377,17 @@ def check_username():
 @app.route('/api/system/reset', methods=['POST'])
 def reset_data():
     try:
-        # Find or create SOM currency
-        som = Currency.query.filter_by(code='SOM').first()
-        if som:
-            som.quantity = 0.0
-        else:
-            # Create SOM if it doesn't exist
-            som = Currency(
-                code='SOM',
-                quantity=0.0,
-                default_buy_rate=0.0,
-                default_sell_rate=0.0,
-                updated_at=datetime.utcnow()
-            )
-            db.session.add(som)
-        
-        # Delete all other currencies
-        Currency.query.filter(Currency.code != 'SOM').delete()
+        # Set all currency quantities to zero
+        currencies = Currency.query.all()
+        for currency in currencies:
+            currency.quantity = 0.0
+            currency.updated_at = datetime.utcnow()
         
         # Delete all history
         History.query.delete()
         
-        # Keep admin user
-        admin = User.query.filter_by(username='a').first()
-        
-        # Delete all other users
-        User.query.filter(User.username != 'a').delete()
-        
         db.session.commit()
-        return jsonify({"message": "Data reset successfully"})
+        return jsonify({"message": "Data reset successfully. Transaction history deleted and all currency balances set to zero."})
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
@@ -530,10 +513,34 @@ def daily_data():
     
     entries = query.all()
     
-    # Calculate daily data
+    # Calculate daily data with proper profit calculation
     daily_data = {}
+    daily_rates = {}  # Store average rates for each currency per day
+    
+    # First pass: Calculate daily average rates for purchases
     for entry in entries:
         day = entry.created_at.strftime('%Y-%m-%d')
+        currency = entry.currency_code
+        
+        if day not in daily_rates:
+            daily_rates[day] = {}
+        if currency not in daily_rates[day]:
+            daily_rates[day][currency] = {
+                'total_purchased': 0.0,
+                'total_purchase_amount': 0.0,
+                'total_sold': 0.0,
+                'total_sale_amount': 0.0
+            }
+            
+        if entry.operation_type == 'Purchase':
+            daily_rates[day][currency]['total_purchased'] += entry.quantity
+            daily_rates[day][currency]['total_purchase_amount'] += entry.total
+        elif entry.operation_type == 'Sale':
+            daily_rates[day][currency]['total_sold'] += entry.quantity
+            daily_rates[day][currency]['total_sale_amount'] += entry.total
+    
+    # Second pass: Calculate daily totals and profits
+    for day, currencies in daily_rates.items():
         if day not in daily_data:
             daily_data[day] = {
                 'day': day,
@@ -541,16 +548,30 @@ def daily_data():
                 'sales': 0.0,
                 'profit': 0.0
             }
-        
-        if entry.operation_type == 'Purchase':
-            daily_data[day]['purchases'] += entry.total
-        elif entry.operation_type == 'Sale':
-            daily_data[day]['sales'] += entry.total
-            daily_data[day]['profit'] += entry.total * 0.1  # Simple profit calculation
+            
+        for currency, data in currencies.items():
+            # Add to daily totals
+            daily_data[day]['purchases'] += data['total_purchase_amount']
+            daily_data[day]['sales'] += data['total_sale_amount']
+            
+            # Calculate average rates
+            avg_purchase_rate = (data['total_purchase_amount'] / data['total_purchased'] 
+                               if data['total_purchased'] > 0 else 0)
+            avg_sale_rate = (data['total_sale_amount'] / data['total_sold']
+                           if data['total_sold'] > 0 else 0)
+            
+            # Calculate profit based on rate difference
+            profit = (avg_sale_rate - avg_purchase_rate) * data['total_sold']
+            daily_data[day]['profit'] += profit
     
     # Convert to list and sort by day
     result = list(daily_data.values())
     result.sort(key=lambda x: x['day'])
+    
+    # Debug log the results
+    logger.info(f"Daily data calculated for {len(result)} days")
+    if result:
+        logger.info(f"Sample day data: {result[0]}")
     
     return jsonify(result)
 

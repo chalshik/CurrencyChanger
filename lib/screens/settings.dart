@@ -15,6 +15,7 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:media_scanner/media_scanner.dart';
 import '../services/export_service.dart';
 import '../providers/theme_provider.dart';
+import 'package:flutter/services.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -55,55 +56,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String _selectedFormat = 'excel';
   String _exportType = 'history'; // Add export type variable
 
+  bool _isLoading = false;
+
   @override
   void initState() {
     super.initState();
-    _loadCurrencies();
-    _loadUsers();
-    _checkAdminStatus();
-  }
-
-  void _checkAdminStatus() {
-    setState(() {
-      _isAdmin = currentUser?.role == 'admin';
-    });
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    // Refresh data when the screen becomes visible
-    if (_showCurrencyManagement) {
-      _loadCurrencies();
-      _startAutoRefresh();
-    } else if (_showUserManagement) {
-      _loadUsers();
-    } else {
-      // Also refresh when first navigating to this screen
-      _loadCurrencies();
-      _loadUsers();
-    }
-  }
-
-  void _startAutoRefresh() {
-    // Cancel any existing timer
-    _autoRefreshTimer?.cancel();
-
-    // Set up a timer to refresh currencies every 3 seconds
-    _autoRefreshTimer = Timer.periodic(const Duration(seconds: 3), (timer) {
-      if (_showCurrencyManagement && mounted) {
-        _loadCurrencies();
-      } else if (_showUserManagement && mounted) {
-        _loadUsers();
-      } else {
-        timer.cancel();
-      }
-    });
+    _initScreen();
   }
 
   @override
   void dispose() {
     _autoRefreshTimer?.cancel();
+    // Restore orientation settings when widget is disposed
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
     _newCurrencyCodeController.dispose();
     _quantityController.dispose();
     _usernameController.dispose();
@@ -118,42 +88,150 @@ class _SettingsScreenState extends State<SettingsScreen> {
     super.dispose();
   }
 
-  Future<void> _loadCurrencies() async {
+  Future<void> _initScreen() async {
+    setState(() { _isLoading = true; });
     try {
+      // Use batched loading to get both currencies and users in one request
+      final batchData = await _dbHelper.batchLoad();
+      
+      if (mounted) {
+        setState(() {
+          // Process currencies
+          _currencies = (batchData['currencies'] as List<CurrencyModel>).map((currency) {
+            return CurrencyModel(
+              id: currency.id,
+              code: currency.code,
+              quantity: 
+                currency.quantity is double
+                  ? currency.quantity
+                  : double.tryParse(currency.quantity.toString()) ?? 0.0,
+              updatedAt: currency.updatedAt,
+              defaultBuyRate: currency.defaultBuyRate,
+              defaultSellRate: currency.defaultSellRate,
+            );
+          }).toList();
+          
+          // Process users
+          _users = batchData['users'] as List<UserModel>;
+          
+          // Check admin status
+          _isAdmin = currentUser?.role == 'admin';
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error in _initScreen: $e');
+      // Fall back to individual loading if batch loading fails
+      _loadCurrencies();
+      _loadUsers();
+      _checkIsAdmin();
+    }
+  }
+
+  void _checkIsAdmin() {
+    setState(() {
+      _isAdmin = currentUser?.role == 'admin';
+    });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Refresh data when the screen becomes visible, but avoid redundant loading
+    if (_showCurrencyManagement) {
+      // Only start auto-refresh if not already running
+      if (_autoRefreshTimer == null || !_autoRefreshTimer!.isActive) {
+        _loadCurrenciesWithIndicator();
+        _startAutoRefresh();
+      }
+    } else if (_showUserManagement) {
+      if (_autoRefreshTimer == null || !_autoRefreshTimer!.isActive) {
+        _loadUsersWithIndicator();
+        _startAutoRefresh();
+      }
+    } else {
+      // Load both currencies and users when first navigating to settings
+      _loadCurrenciesWithIndicator();
+      _loadUsersWithIndicator();
+    }
+  }
+
+  void _startAutoRefresh() {
+    // Cancel any existing timer
+    _autoRefreshTimer?.cancel();
+
+    // Set up a timer to refresh currencies less frequently - every 10 seconds
+    _autoRefreshTimer = Timer.periodic(const Duration(seconds: 10), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      
+      if (_showCurrencyManagement) {
+        _loadCurrenciesWithIndicator();
+      } else if (_showUserManagement) {
+        _loadUsersWithIndicator();
+      } else {
+        timer.cancel();
+      }
+    });
+  }
+
+  // New method with loading indicator
+  Future<void> _loadCurrenciesWithIndicator() async {
+    try {
+      setState(() { _isLoading = true; });
       final currencies = await _dbHelper.getAllCurrencies();
       if (!mounted) return;
       setState(() {
         // Ensure proper quantity parsing for all currencies
-        _currencies =
-            currencies.map((currency) {
-              // Ensure quantity is properly parsed as double
-              return CurrencyModel(
-                id: currency.id,
-                code: currency.code,
-                quantity:
-                    currency.quantity is double
-                        ? currency.quantity
-                        : double.tryParse(currency.quantity.toString()) ?? 0.0,
-                updatedAt: currency.updatedAt,
-                defaultBuyRate: currency.defaultBuyRate,
-                defaultSellRate: currency.defaultSellRate,
-              );
-            }).toList();
+        _currencies = currencies.map((currency) {
+          // Ensure quantity is properly parsed as double
+          return CurrencyModel(
+            id: currency.id,
+            code: currency.code,
+            quantity:
+                currency.quantity is double
+                    ? currency.quantity
+                    : double.tryParse(currency.quantity.toString()) ?? 0.0,
+            updatedAt: currency.updatedAt,
+            defaultBuyRate: currency.defaultBuyRate,
+            defaultSellRate: currency.defaultSellRate,
+          );
+        }).toList();
+        _isLoading = false;
       });
     } catch (e) {
       debugPrint('Error loading currencies: $e');
+      if (mounted) setState(() { _isLoading = false; });
     }
   }
-
-  Future<void> _loadUsers() async {
+  
+  // New method with loading indicator
+  Future<void> _loadUsersWithIndicator() async {
     try {
+      setState(() { _isLoading = true; });
       final users = await _dbHelper.getAllUsers();
       if (!mounted) return;
       setState(() {
         _users = users;
+        _isLoading = false;
       });
     } catch (e) {
       debugPrint('Error loading users: $e');
+      if (mounted) setState(() { _isLoading = false; });
+    }
+  }
+
+  Future<void> _loadCurrencies() async {
+    if (mounted) {
+      await _loadCurrenciesWithIndicator();
+    }
+  }
+  
+  Future<void> _loadUsers() async {
+    if (mounted) {
+      await _loadUsersWithIndicator();
     }
   }
 
@@ -267,7 +345,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 controller: _newCurrencyCodeController,
                 decoration: InputDecoration(
                   labelText: _getTranslatedText('currency_code'),
-                  hintText: _getTranslatedText('currency_code_hint'),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
@@ -620,7 +697,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
                         content: Text(
-                          _getTranslatedText('user_created_success'),
+                          _getTranslatedText('user_created'),
                         ),
                       ),
                     );
@@ -849,14 +926,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     size: 28,
                   ),
                   trailing: const Icon(Icons.arrow_forward_ios, size: 20),
-                  onTap: () {
-                    setState(() {
-                      _showCurrencyManagement = true;
-                      _showUserManagement = false;
-                      _showExportSection = false;
-                      _startAutoRefresh();
-                    });
-                  },
+                  onTap: _navigateToCurrencyManagement,
                 ),
                 Divider(height: 1, color: Colors.grey.shade200),
                 ListTile(
@@ -998,7 +1068,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  "v1.0.0",
+                  "v1.0.0 online",
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: Theme.of(
                       context,
@@ -1064,187 +1134,220 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  Future<void> _navigateToCurrencyManagement() async {
+    setState(() {
+      _showCurrencyManagement = true;
+      _showUserManagement = false;
+      _showExportSection = false;
+      _startAutoRefresh();
+    });
+  }
+
   Widget _buildCurrencyManagement() {
-    return SizedBox(
-      height:
-          MediaQuery.of(context).size.height -
-          200, // Adjust height to fit the screen
-      child: Column(
-        children: [
-          // Header section
-          Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 12.0,
-              vertical: 16.0,
-            ),
-            child: Row(
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.arrow_back, size: 28),
-                  onPressed: () {
-                    setState(() {
-                      _showCurrencyManagement = false;
-                      _autoRefreshTimer?.cancel();
-                    });
-                  },
+    return OrientationBuilder(
+      builder: (context, orientation) {
+        // Force portrait orientation
+        SystemChrome.setPreferredOrientations([
+          DeviceOrientation.portraitUp,
+          DeviceOrientation.portraitDown,
+        ]);
+
+        return SizedBox(
+          height: MediaQuery.of(context).size.height - 200,
+          child: Column(
+            children: [
+              // Header section
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12.0,
+                  vertical: 16.0,
                 ),
-                const SizedBox(width: 16),
-                Text(
-                  _getTranslatedText('currency_management'),
-                  style: const TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          // Add SOM button
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12.0),
-            child: SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: _showAddSomDialog,
-                icon: const Icon(Icons.add, size: 24),
-                label: Text(
-                  _getTranslatedText('add_som'),
-                  style: const TextStyle(fontSize: 16),
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blue.shade100,
-                  foregroundColor: Colors.blue.shade800,
-                  padding: const EdgeInsets.symmetric(
-                    vertical: 16,
-                    horizontal: 16,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                ),
-              ),
-            ),
-          ),
-
-          const SizedBox(height: 12),
-
-          // Currency list
-          Expanded(
-            child: RefreshIndicator(
-              onRefresh: _loadCurrencies,
-              child:
-                  _currencies.isEmpty
-                      ? const Center(
-                        child: Text(
-                          'No currencies available',
-                          style: TextStyle(fontSize: 18, color: Colors.grey),
-                        ),
-                      )
-                      : ListView.builder(
-                        itemCount: _currencies.length,
-                        itemBuilder: (context, index) {
-                          final currency = _currencies[index];
-                          // Format quantity with 2 decimal places
-                          final formattedQuantity = NumberFormat.currency(
-                            decimalDigits: 2,
-                            symbol: '',
-                          ).format(currency.quantity);
-
-                          // Use different style for SOM currency
-                          final bool isSom = currency.code == 'SOM';
-
-                          return Card(
-                            margin: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 6,
-                            ),
-                            elevation: 2,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            color: isSom ? Colors.blue.shade50 : null,
-                            child: ListTile(
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 8,
-                              ),
-                              title: Text(
-                                currency.code ?? '',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 18,
-                                  color: isSom ? Colors.blue.shade800 : null,
-                                ),
-                              ),
-                              subtitle: Padding(
-                                padding: const EdgeInsets.only(top: 8.0),
-                                child: Text(
-                                  '${_getTranslatedText('quantity')}: $formattedQuantity\n'
-                                  '${_getTranslatedText('last_updated')}: ${DateFormat('dd-MM-yy HH:mm').format(currency.updatedAt)}',
-                                  style: const TextStyle(fontSize: 14),
-                                ),
-                              ),
-                              trailing: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  if (!isSom) ...[
-                                    IconButton(
-                                      icon: const Icon(
-                                        Icons.edit,
-                                        color: Colors.blue,
-                                        size: 26,
-                                      ),
-                                      onPressed:
-                                          () =>
-                                              _showEditCurrencyDialog(currency),
-                                    ),
-                                    IconButton(
-                                      icon: const Icon(
-                                        Icons.delete,
-                                        color: Colors.red,
-                                        size: 26,
-                                      ),
-                                      onPressed:
-                                          () => _deleteCurrency(
-                                            currency.id,
-                                            currency.code ?? '',
-                                          ),
-                                    ),
-                                  ] else
-                                    const Icon(
-                                      Icons.payments,
-                                      color: Colors.blue,
-                                      size: 26,
-                                    ),
-                                ],
-                              ),
-                            ),
-                          );
-                        },
+                child: Row(
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.arrow_back, size: 28),
+                      onPressed: () {
+                        setState(() {
+                          _showCurrencyManagement = false;
+                          _autoRefreshTimer?.cancel();
+                        });
+                        // Restore orientation settings when leaving
+                        SystemChrome.setPreferredOrientations([
+                          DeviceOrientation.portraitUp,
+                          DeviceOrientation.portraitDown,
+                          DeviceOrientation.landscapeLeft,
+                          DeviceOrientation.landscapeRight,
+                        ]);
+                      },
+                    ),
+                    const SizedBox(width: 16),
+                    Text(
+                      _getTranslatedText('currency_management'),
+                      style: const TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
                       ),
-            ),
-          ),
-
-          // Add New Currency button
-          Padding(
-            padding: const EdgeInsets.all(12.0),
-            child: ElevatedButton(
-              onPressed: () => _showAddCurrencyDialog(context),
-              style: ElevatedButton.styleFrom(
-                minimumSize: const Size(double.infinity, 56),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
+                    ),
+                    const Spacer(),
+                    // Add loading indicator
+                    if (_isLoading)
+                      const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2.5),
+                      ),
+                    const SizedBox(width: 12),
+                  ],
                 ),
               ),
-              child: Text(
-                _getTranslatedText('add_new_currency'),
-                style: const TextStyle(fontSize: 16),
+
+              // Add SOM button
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12.0),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: _showAddSomDialog,
+                    icon: const Icon(Icons.add, size: 24),
+                    label: Text(
+                      _getTranslatedText('add_som'),
+                      style: const TextStyle(fontSize: 16),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blue.shade100,
+                      foregroundColor: Colors.blue.shade800,
+                      padding: const EdgeInsets.symmetric(
+                        vertical: 16,
+                        horizontal: 16,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                    ),
+                  ),
+                ),
               ),
-            ),
+
+              const SizedBox(height: 12),
+
+              // Currency list
+              Expanded(
+                child: RefreshIndicator(
+                  onRefresh: _loadCurrencies,
+                  child:
+                      _currencies.isEmpty
+                          ? const Center(
+                              child: Text(
+                                'No currencies available',
+                                style: TextStyle(fontSize: 18, color: Colors.grey),
+                              ),
+                            )
+                          : ListView.builder(
+                              itemCount: _currencies.length,
+                              itemBuilder: (context, index) {
+                                final currency = _currencies[index];
+                                // Format quantity with 2 decimal places
+                                final formattedQuantity = NumberFormat.currency(
+                                  decimalDigits: 2,
+                                  symbol: '',
+                                ).format(currency.quantity);
+
+                                // Use different style for SOM currency
+                                final bool isSom = currency.code == 'SOM';
+
+                                return Card(
+                                  margin: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 6,
+                                  ),
+                                  elevation: 2,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(16),
+                                  ),
+                                  color: isSom ? Colors.blue.shade50 : null,
+                                  child: ListTile(
+                                    contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 8,
+                                    ),
+                                    title: Text(
+                                      currency.code ?? '',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 18,
+                                        color: isSom ? Colors.blue.shade800 : null,
+                                      ),
+                                    ),
+                                    subtitle: Padding(
+                                      padding: const EdgeInsets.only(top: 8.0),
+                                      child: Text(
+                                        '${_getTranslatedText('quantity')}: $formattedQuantity\n'
+                                        '${_getTranslatedText('last_updated')}: ${DateFormat('dd-MM-yy HH:mm').format(currency.updatedAt)}',
+                                        style: const TextStyle(fontSize: 14),
+                                      ),
+                                    ),
+                                    trailing: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        if (!isSom) ...[
+                                          IconButton(
+                                            icon: const Icon(
+                                              Icons.edit,
+                                              color: Colors.blue,
+                                              size: 26,
+                                            ),
+                                            onPressed:
+                                                () =>
+                                                    _showEditCurrencyDialog(currency),
+                                          ),
+                                          IconButton(
+                                            icon: const Icon(
+                                              Icons.delete,
+                                              color: Colors.red,
+                                              size: 26,
+                                            ),
+                                            onPressed:
+                                                () => _deleteCurrency(
+                                                  currency.id,
+                                                  currency.code ?? '',
+                                                ),
+                                          ),
+                                        ] else
+                                          const Icon(
+                                            Icons.payments,
+                                            color: Colors.blue,
+                                            size: 26,
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                ),
+              ),
+
+              // Add New Currency button
+              Padding(
+                padding: const EdgeInsets.all(12.0),
+                child: ElevatedButton(
+                  onPressed: () => _showAddCurrencyDialog(context),
+                  style: ElevatedButton.styleFrom(
+                    minimumSize: const Size(double.infinity, 56),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
+                  child: Text(
+                    _getTranslatedText('add_new_currency'),
+                    style: const TextStyle(fontSize: 16),
+                  ),
+                ),
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -1277,6 +1380,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     fontWeight: FontWeight.bold,
                   ),
                 ),
+                const Spacer(),
+                // Add loading indicator
+                if (_isLoading)
+                  const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2.5),
+                  ),
+                const SizedBox(width: 12),
               ],
             ),
           ),
@@ -1408,7 +1520,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 Text(
                   _getTranslatedText('export_data'),
                   style: const TextStyle(
-                    fontSize: 22,
+                    fontSize: 20,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
@@ -1459,7 +1571,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             onTap: () => _selectDate(true),
                           ),
                         ),
-                        const SizedBox(width: 16),
+                        const SizedBox(width: 14),
                         Expanded(
                           child: TextField(
                             controller: _endDateController,
@@ -1528,72 +1640,60 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                     const SizedBox(height: 30),
 
-                    // Export Buttons - complete redesign with vertical layout
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                    Text(
+                      _getTranslatedText('export_options'),
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+
+                    // Export Buttons
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                       children: [
-                        
-                        // History Button
-                        ElevatedButton(
-                          onPressed: () {
-                            setState(() {
-                              _exportType = 'history';
-                            });
-                            _exportData();
-                          },
-                          style: ElevatedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            onPressed: () {
+                              setState(() {
+                                _exportType = 'history';
+                              });
+                              _exportData();
+                            },
+                            icon: const Icon(Icons.history, size: 24),
+                            label: Text(
+                              _getTranslatedText('export_history'),
+                              style: const TextStyle(fontSize: 14),
                             ),
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              const Icon(Icons.history, size: 22),
-                              const SizedBox(width: 12),
-                              Flexible(
-                                child: Text(
-                                  _getTranslatedText('export_history'),
-                                  style: const TextStyle(fontSize: 16),
-                                  softWrap: true,
-                                  textAlign: TextAlign.center,
-                                ),
+                            style: ElevatedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
                               ),
-                            ],
+                            ),
                           ),
                         ),
-                        
-                        const SizedBox(height: 16),
-                        
-                        // Statistics Button
-                        ElevatedButton(
-                          onPressed: () {
-                            setState(() {
-                              _exportType = 'statistics';
-                            });
-                            _exportData();
-                          },
-                          style: ElevatedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            onPressed: () {
+                              setState(() {
+                                _exportType = 'statistics';
+                              });
+                              _exportData();
+                            },
+                            icon: const Icon(Icons.analytics, size: 24),
+                            label: Text(
+                              _getTranslatedText('export_statistics'),
+                              style: const TextStyle(fontSize: 14),
                             ),
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              const Icon(Icons.analytics, size: 22),
-                              const SizedBox(width: 12),
-                              Flexible(
-                                child: Text(
-                                  _getTranslatedText('export_statistics'),
-                                  style: const TextStyle(fontSize: 16),
-                                  softWrap: true,
-                                  textAlign: TextAlign.center,
-                                ),
+                            style: ElevatedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
                               ),
-                            ],
+                            ),
                           ),
                         ),
                       ],
@@ -2008,7 +2108,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     controller: codeController,
                     decoration: InputDecoration(
                       labelText: _getTranslatedText('currency_code'),
-                      hintText: _getTranslatedText('currency_code_hint'),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),

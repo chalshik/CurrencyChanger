@@ -713,14 +713,14 @@ class _CurrencyConverterCoreState extends State<CurrencyConverterCore> {
       margin: const EdgeInsets.only(top: 16), // Increased margin
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [Colors.green.shade400, Colors.green.shade800],
+          colors: [Colors.blue.shade500, Colors.blue.shade800],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.green.shade300.withOpacity(0.5),
+            color: Colors.blue.shade300.withOpacity(0.5),
             blurRadius: 8,
             offset: const Offset(0, 3),
           ),

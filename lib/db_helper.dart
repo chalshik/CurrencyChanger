@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'dart:async';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import './models/currency.dart';
 import './models/history.dart';
 import './models/user.dart';
@@ -18,64 +20,107 @@ class DatabaseHelper {
   bool get isOfflineMode => _isOfflineMode;
   set isOfflineMode(bool value) => _isOfflineMode = value;
 
+  // In-memory cache for currencies
+  List<CurrencyModel>? _cachedCurrencies;
+  DateTime? _lastFetchTime;
+
   DatabaseHelper._init();
 
-  // Core API call handler
+  // Core API call handler with retry logic
   Future<dynamic> _apiCall(
     String endpoint, {
     String method = 'GET',
     Map<String, dynamic>? body,
     Map<String, String>? queryParams,
+    int retryCount = 2,
+    int timeoutSeconds = 10,
   }) async {
     if (_isOfflineMode) {
       throw Exception('App is in offline mode. Server connection required.');
     }
 
-    try {
-      final uri = Uri.parse(
-        '$baseUrl/$endpoint',
-      ).replace(queryParameters: queryParams);
-
-      final headers = {'Content-Type': 'application/json'};
-      http.Response response;
-
-      switch (method) {
-        case 'GET':
-          response = await http.get(uri, headers: headers);
-          break;
-        case 'POST':
-          response = await http.post(
-            uri,
-            headers: headers,
-            body: body != null ? jsonEncode(body) : null,
-          );
-          break;
-        case 'PUT':
-          response = await http.put(
-            uri,
-            headers: headers,
-            body: body != null ? jsonEncode(body) : null,
-          );
-          break;
-        case 'DELETE':
-          response = await http.delete(uri, headers: headers);
-          break;
-        default:
-          throw Exception('Unsupported HTTP method: $method');
-      }
-
-      if (response.statusCode >= 200 && response.statusCode < 300) {
-        if (response.body.isEmpty) return null;
-        return jsonDecode(response.body);
-      } else {
-        throw Exception(
-          'API Error: ${response.statusCode} - ${response.reasonPhrase} - ${response.body}',
-        );
-      }
-    } catch (e) {
+    // First check network connectivity
+    bool hasConnectivity = await checkNetworkConnectivity();
+    if (!hasConnectivity) {
       _isOfflineMode = true;
-      throw Exception('Network error: ${e.toString()}');
+      throw Exception('No network connectivity. Please check your connection.');
     }
+
+    Exception? lastException;
+    for (int attempt = 0; attempt <= retryCount; attempt++) {
+      try {
+        final uri = Uri.parse(
+          '$baseUrl/$endpoint',
+        ).replace(queryParameters: queryParams);
+
+        final headers = {'Content-Type': 'application/json'};
+        http.Response response;
+
+        switch (method) {
+          case 'GET':
+            response = await http.get(uri, headers: headers)
+                .timeout(Duration(seconds: timeoutSeconds));
+            break;
+          case 'POST':
+            response = await http.post(
+              uri,
+              headers: headers,
+              body: body != null ? jsonEncode(body) : null,
+            ).timeout(Duration(seconds: timeoutSeconds));
+            break;
+          case 'PUT':
+            response = await http.put(
+              uri,
+              headers: headers,
+              body: body != null ? jsonEncode(body) : null,
+            ).timeout(Duration(seconds: timeoutSeconds));
+            break;
+          case 'DELETE':
+            response = await http.delete(uri, headers: headers)
+                .timeout(Duration(seconds: timeoutSeconds));
+            break;
+          default:
+            throw Exception('Unsupported HTTP method: $method');
+        }
+
+        if (response.statusCode >= 200 && response.statusCode < 300) {
+          if (response.body.isEmpty) return null;
+          return jsonDecode(response.body);
+        } else {
+          lastException = Exception(
+            'API Error: ${response.statusCode} - ${response.reasonPhrase} - ${response.body}',
+          );
+          
+          // If this is a server error (5xx), retry
+          if (response.statusCode >= 500 && attempt < retryCount) {
+            // Add exponential backoff
+            await Future.delayed(Duration(milliseconds: 200 * (attempt + 1)));
+            continue;
+          }
+          throw lastException;
+        }
+      } catch (e) {
+        lastException = e is Exception ? e : Exception('Network error: ${e.toString()}');
+        
+        // Only retry for timeout and certain network errors
+        if ((e is TimeoutException || 
+            e.toString().contains('SocketException') || 
+            e.toString().contains('Connection failed')) && 
+            attempt < retryCount) {
+          // Add exponential backoff
+          await Future.delayed(Duration(milliseconds: 200 * (attempt + 1)));
+          continue;
+        }
+        
+        if (attempt == retryCount) {
+          _isOfflineMode = true;
+          throw lastException;
+        }
+      }
+    }
+    
+    // This shouldn't be reached, but just in case
+    throw lastException ?? Exception('Unknown network error');
   }
 
   // Helper function to safely convert values to double
@@ -91,6 +136,14 @@ class DatabaseHelper {
 
   // Check server connection
   Future<bool> verifyServerConnection() async {
+    // First check if device has network connectivity
+    bool hasConnectivity = await checkNetworkConnectivity();
+    if (!hasConnectivity) {
+      _isOfflineMode = true;
+      return false;
+    }
+    
+    // Then try to connect to server
     try {
       final response = await http
           .get(Uri.parse('$baseUrl/currencies'))
@@ -167,14 +220,29 @@ class DatabaseHelper {
 
   /// Get all currencies
   Future<List<CurrencyModel>> getAllCurrencies() async {
+    // Only refresh from server if cache is empty or older than 5 seconds
+    final now = DateTime.now();
+    if (_cachedCurrencies != null && 
+        _lastFetchTime != null && 
+        now.difference(_lastFetchTime!).inSeconds < 5) {
+      return _cachedCurrencies!;
+    }
+    
     try {
       final response = await _apiCall('currencies');
-      return (response as List)
+      final currencies = (response as List)
           .map((json) => CurrencyModel.fromMap(json))
           .toList();
+      
+      // Update cache
+      _cachedCurrencies = currencies;
+      _lastFetchTime = now;
+      
+      return currencies;
     } catch (e) {
       debugPrint('Error in getAllCurrencies: $e');
-      return [];
+      // Return cached data if available, empty list otherwise
+      return _cachedCurrencies ?? [];
     }
   }
 
@@ -506,7 +574,7 @@ class DatabaseHelper {
           (p) => p['currency_code'] == currency.code,
           orElse:
               () => <String, dynamic>{
-                'amount': 0.0,
+                'profit': 0.0,
                 'avg_purchase_rate': 0.0,
                 'avg_sale_rate': 0.0,
                 'total_purchased': 0.0,
@@ -514,7 +582,8 @@ class DatabaseHelper {
               },
         );
 
-        final profit = profitEntry['amount'] ?? 0.0;
+        // Use 'profit' instead of 'amount' for consistency
+        final profit = profitEntry['profit'] ?? 0.0;
 
         if (currency.code != 'SOM') {
           totalProfit += profit;
@@ -638,7 +707,39 @@ class DatabaseHelper {
         queryParams: queryParams,
       );
 
-      return List<Map<String, dynamic>>.from(response);
+      // Debug the raw response from the server
+      debugPrint('Raw daily data response:');
+      debugPrint('Number of items: ${response.length}');
+      if (response.isNotEmpty) {
+        debugPrint('Sample item: ${response[0]}');
+      }
+
+      // Normalize the response data to ensure profit is correctly handled
+      return List<Map<String, dynamic>>.from(response).map((item) {
+        Map<String, dynamic> normalizedItem = {...item};
+        
+        // Make sure profit is present and a proper number
+        if (!normalizedItem.containsKey('profit')) {
+          // Try to get profit from amount field (server inconsistency)
+          if (normalizedItem.containsKey('amount')) {
+            normalizedItem['profit'] = normalizedItem['amount'];
+          } else {
+            normalizedItem['profit'] = 0.0;
+          }
+        }
+
+        // Ensure profit is properly typed
+        final profit = normalizedItem['profit'];
+        if (profit is String) {
+          normalizedItem['profit'] = double.tryParse(profit) ?? 0.0;
+        } else if (profit is int) {
+          normalizedItem['profit'] = profit.toDouble();
+        } else if (!(profit is double)) {
+          normalizedItem['profit'] = 0.0;
+        }
+
+        return normalizedItem;
+      }).toList();
     } catch (e) {
       debugPrint('Error in getDailyData: $e');
       return [];
@@ -665,28 +766,41 @@ class DatabaseHelper {
       // Convert response to proper list and ensure numeric values
       final result = List<Map<String, dynamic>>.from(response);
 
+      // Debug the raw response from the server
+      debugPrint('Raw profitable currencies response:');
+      for (var item in result) {
+        debugPrint('${item['currency_code']}: ${item.toString()}');
+      }
+
       return result.map((item) {
+        Map<String, dynamic> normalizedItem = {...item};
+        
+        // Handle 'profit' field - server might use 'amount' instead
+        if (!normalizedItem.containsKey('profit') && normalizedItem.containsKey('amount')) {
+          normalizedItem['profit'] = normalizedItem['amount'];
+        }
+
         // Ensure profit is a proper number
-        if (item.containsKey('profit')) {
-          final profit = item['profit'];
+        if (normalizedItem.containsKey('profit')) {
+          final profit = normalizedItem['profit'];
           if (profit is String) {
-            item['profit'] = double.tryParse(profit) ?? 0.0;
+            normalizedItem['profit'] = double.tryParse(profit) ?? 0.0;
           } else if (profit is int) {
-            item['profit'] = profit.toDouble();
+            normalizedItem['profit'] = profit.toDouble();
           } else if (!(profit is double)) {
-            item['profit'] = 0.0;
+            normalizedItem['profit'] = 0.0;
           }
         } else {
-          item['profit'] = 0.0;
+          normalizedItem['profit'] = 0.0;
         }
 
         // Make sure currency_code exists
-        if (!item.containsKey('currency_code') ||
-            item['currency_code'] == null) {
-          item['currency_code'] = 'Unknown';
+        if (!normalizedItem.containsKey('currency_code') ||
+            normalizedItem['currency_code'] == null) {
+          normalizedItem['currency_code'] = 'Unknown';
         }
 
-        return item;
+        return normalizedItem;
       }).toList();
     } catch (e) {
       debugPrint('Error in getMostProfitableCurrencies: $e');
@@ -710,8 +824,33 @@ class DatabaseHelper {
         'analytics/daily-data',
         queryParams: queryParams,
       );
+      
+      // Normalize the response data to ensure profit is correctly handled
+      return List<Map<String, dynamic>>.from(response).map((item) {
+        Map<String, dynamic> normalizedItem = {...item};
+        
+        // Make sure profit is present and a proper number
+        if (!normalizedItem.containsKey('profit')) {
+          // Try to get profit from amount field (server inconsistency)
+          if (normalizedItem.containsKey('amount')) {
+            normalizedItem['profit'] = normalizedItem['amount'];
+          } else {
+            normalizedItem['profit'] = 0.0;
+          }
+        }
 
-      return List<Map<String, dynamic>>.from(response);
+        // Ensure profit is properly typed
+        final profit = normalizedItem['profit'];
+        if (profit is String) {
+          normalizedItem['profit'] = double.tryParse(profit) ?? 0.0;
+        } else if (profit is int) {
+          normalizedItem['profit'] = profit.toDouble();
+        } else if (!(profit is double)) {
+          normalizedItem['profit'] = 0.0;
+        }
+
+        return normalizedItem;
+      }).toList();
     } catch (e) {
       debugPrint('Error in getDailyDataByCurrency: $e');
       return [];
@@ -755,10 +894,29 @@ class DatabaseHelper {
     }
   }
 
+  // Check if the device has network connectivity
+  Future<bool> checkNetworkConnectivity() async {
+    try {
+      var connectivityResult = await Connectivity().checkConnectivity();
+      return connectivityResult != ConnectivityResult.none;
+    } catch (e) {
+      debugPrint('Error checking connectivity: $e');
+      return false;
+    }
+  }
+
   Future<bool> retryConnection({
     int maxAttempts = 3,
     int delaySeconds = 1,
   }) async {
+    // First check if the device has network connectivity
+    bool hasConnectivity = await checkNetworkConnectivity();
+    if (!hasConnectivity) {
+      _isOfflineMode = true;
+      return false;
+    }
+
+    // If we have device connectivity, try to connect to the server
     for (int attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
         if (await verifyServerConnection()) {
@@ -878,6 +1036,28 @@ class DatabaseHelper {
     } catch (e) {
       debugPrint('Error in usernameExists: $e');
       return false;
+    }
+  }
+
+  // Optimize loading by batching multiple calls together
+  Future<Map<String, dynamic>> batchLoad() async {
+    try {
+      // Use Promise.all equivalent to run requests in parallel
+      final results = await Future.wait([
+        getAllCurrencies(),
+        _apiCall('users')
+      ]);
+      
+      return {
+        'currencies': results[0],
+        'users': (results[1] as List).map((user) => UserModel.fromMap(user)).toList(),
+      };
+    } catch (e) {
+      debugPrint('Error in batchLoad: $e');
+      return {
+        'currencies': <CurrencyModel>[],
+        'users': <UserModel>[],
+      };
     }
   }
 }

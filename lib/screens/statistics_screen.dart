@@ -587,7 +587,12 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                 final totalSold = stat['total_sold'] as double? ?? 0.0;
                 final currentQuantity =
                     stat['current_quantity'] as double? ?? 0.0;
-                final profit = stat['profit'] as double? ?? 0.0;
+                
+                // Ensure we have profit data
+                var profit = stat['profit'] as double? ?? 0.0;
+                
+                // Debug the profit value
+                debugPrint('Currency: ${stat['currency']}, Profit: $profit');
 
                 return InkWell(
                   onTap: () {

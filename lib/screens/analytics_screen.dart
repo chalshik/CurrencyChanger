@@ -272,18 +272,34 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
           startDate: _selectedStartDate,
           endDate: _selectedEndDate,
         );
-        data['purchases'] =
+        
+        // Filter out SOM entries
+        data['purchases'] = 
             (data['purchases'] as List)
                 .where((item) => item['currency_code'] != 'SOM')
                 .toList();
-        data['sales'] =
+        data['sales'] = 
             (data['sales'] as List)
                 .where((item) => item['currency_code'] != 'SOM')
                 .toList();
-        data['profit'] = await _dbHelper.getMostProfitableCurrencies(
+                
+        // Get profit data separately to ensure we have it
+        List<Map<String, dynamic>> profitData = await _dbHelper.getMostProfitableCurrencies(
           startDate: _selectedStartDate,
           endDate: _selectedEndDate,
+          limit: 100, // Get more data to ensure we have all currencies
         );
+        
+        // Filter out SOM entries
+        profitData = profitData.where((item) => item['currency_code'] != 'SOM').toList();
+        
+        // Debug the profit data
+        debugPrint('Profit data: ${profitData.length} items');
+        for (var item in profitData) {
+          debugPrint('  ${item['currency_code']}: ${item['profit']}');
+        }
+        
+        data['profit'] = profitData;
         return data;
       case ChartType.bar:
         if (_selectedCurrency != null &&

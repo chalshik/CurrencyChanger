@@ -29,9 +29,9 @@ class UserModel {
     return UserModel(
       id: map['id'],
       username: map['username'],
-      password: map['password'],
+      password: map['password'] ?? '',
       role: map['role'] ?? 'user',
-      createdAt: DateTime.parse(map['created_at']),
+      createdAt: map['created_at'] != null ? DateTime.parse(map['created_at']) : DateTime.now(),
     );
   }
 

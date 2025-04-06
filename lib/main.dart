@@ -2,13 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'screens/login_screen.dart';
-import 'screens/currency_converter.dart';
+import 'screens/network_error_screen.dart';
 import 'providers/language_provider.dart';
 import 'providers/theme_provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'db_helper.dart';
-import 'models/user.dart';
 
 // Custom theme extension for additional text styling
 class TextStyleExtension extends ThemeExtension<TextStyleExtension> {
@@ -144,83 +142,85 @@ class SplashScreen extends StatefulWidget {
 }
 
 class _SplashScreenState extends State<SplashScreen> {
+  bool _isCheckingConnectivity = false;
+
   @override
   void initState() {
     super.initState();
-    _navigateToHome();
+    _checkConnectivityAndNavigate();
   }
 
-  _navigateToHome() async {
-    // First check if we have saved credentials
+  Future<void> _checkConnectivityAndNavigate() async {
+    setState(() {
+      _isCheckingConnectivity = true;
+    });
+
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final rememberMe = prefs.getBool('remember_me') ?? false;
+      // Simulate loading time for 2 seconds to show splash screen
+      await Future.delayed(const Duration(seconds: 2));
+      if (!mounted) return;
 
-      if (rememberMe) {
-        final username = prefs.getString('username');
-        final password = prefs.getString('password');
-
-        if (username != null && password != null) {
-          // Wait a bit to show the splash screen
-          await Future.delayed(const Duration(seconds: 2));
-          if (!mounted) return;
-          
-          // Try to auto-login
-          final dbHelper = DatabaseHelper.instance;
-          
-          // Special case for admin credentials
-          if (username == 'a' && password == 'a') {
-            final adminUser = await dbHelper.getUserByCredentials(username, password);
-            if (adminUser != null) {
-              // Set the current user (using the global variable from login_screen.dart)
-              currentUser = adminUser;
-              
-              // Navigate directly to the main app
-              Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(builder: (context) => const ResponsiveCurrencyConverter()),
-              );
-              return;
-            }
-          }
-          
-          // For regular users, check connectivity
-          if (!dbHelper.isOfflineMode || await dbHelper.retryConnection()) {
-            final user = await dbHelper.getUserByCredentials(username, password);
-            if (user != null) {
-              // Set the current user (using the global variable from login_screen.dart)
-              currentUser = user;
-              
-              // Navigate directly to the main app
-              Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(builder: (context) => const ResponsiveCurrencyConverter()),
-              );
-              return;
-            }
-          }
+      // Check network connectivity
+      var connectivityResult = await Connectivity().checkConnectivity();
+      if (connectivityResult == ConnectivityResult.none) {
+        // No network connectivity
+        if (mounted) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (context) => NetworkErrorScreen(
+                onRetry: () async {
+                  // When retry is pressed, check connectivity again
+                  try {
+                    debugPrint("Retry callback triggered");
+                    var result = await Connectivity().checkConnectivity();
+                    
+                    if (result != ConnectivityResult.none) {
+                      // If there's connectivity, navigate to login screen
+                      if (mounted) {
+                        debugPrint("Connectivity restored, navigating to login screen");
+                        Navigator.pushReplacement(
+                          context,
+                          MaterialPageRoute(builder: (context) => const LoginScreen()),
+                        );
+                        return true; // Return true to indicate successful navigation
+                      }
+                    }
+                    debugPrint("No connectivity or not mounted, return false");
+                    return false; // Return false to indicate connectivity still not available
+                  } catch (e) {
+                    debugPrint("Error in retry callback: $e");
+                    return false;
+                  }
+                },
+              ),
+            ),
+          );
+        }
+      } else {
+        // Has network connectivity, proceed to login screen
+        if (mounted) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (context) => const LoginScreen()),
+          );
         }
       }
-      
-      // If auto-login failed or no saved credentials, go to login screen
-      await Future.delayed(const Duration(seconds: 2));
-      if (!mounted) return;
-      
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => const LoginScreen()),
-      );
     } catch (e) {
-      debugPrint('Error in auto-login: $e');
-      
-      // If error, default to login screen
-      await Future.delayed(const Duration(seconds: 2));
-      if (!mounted) return;
-      
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => const LoginScreen()),
-      );
+      debugPrint('Error checking connectivity: $e');
+      // In case of error, proceed to login screen
+      if (mounted) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const LoginScreen()),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isCheckingConnectivity = false;
+        });
+      }
     }
   }
 

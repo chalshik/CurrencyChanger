@@ -1,11 +1,5 @@
 {
   "app_name": "Currency Converter",
-  "app_description": "Manage your currency exchanges with ease and efficiency",
-  "login": "Login",
-  "login_button": "Login",
-  "username_required": "Please enter your username",
-  "password_required": "Please enter your password",
-  "remember_me": "Remember me",
   "convert": "Convert",
   "settings": "Settings",
   "language": "Language",
@@ -22,8 +16,8 @@
   "system_mode": "System Mode",
   "reset_all_data": "Reset All Data",
   "cancel": "Cancel",
-  "reset_warning": "WARNING: This will delete all currencies, transaction history, and users except the admin. This action cannot be undone!",
-  "reset_success": "All data has been reset",
+  "reset_warning": "WARNING: This will delete all transaction history and set all currency balances to zero. User accounts and currency settings will be preserved. This action cannot be undone!",
+  "reset_success": "Transaction history deleted and all currency balances set to zero",
   "add_new_currency": "Add New Currency",
   "add": "Add",
   "add_som": "Add SOM",
@@ -31,7 +25,7 @@
   "user": "User",
   "admin": "Admin",
   "username_exists": "Username already exists",
-  "user_created_success": "User created successfully",
+  "user_created": "User created successfully",
   "confirm_delete": "Confirm Delete",
   "confirm_delete_currency": "Are you sure you want to delete currency {code}?",
   "currency_deleted": "Currency {code} deleted",
@@ -50,7 +44,6 @@
   "edit_currency": "Edit {code}",
   "invalid_values": "Invalid values: Quantity cannot be negative, rates must be greater than 0",
   "currency_exists": "Currency code already exists",
-  "currency_code_hint": "Enter currency code (3 letters)",
   "enter_valid_numbers": "Please enter valid numbers",
   "save": "Save",
   "default_buy_rate": "Default Buy Rate",
@@ -212,5 +205,10 @@
   "show_numpad": "Show Numpad",
   "buy_foreign_currency": "Buy Foreign Currency",
   "sell_foreign_currency": "Sell Foreign Currency",
-  "foreign_currency_value_breakdown": "Foreign Currency Value Breakdown"
+  "foreign_currency_value_breakdown": "Foreign Currency Value Breakdown",
+  
+  "no_connection": "No Internet Connection",
+  "connection_required": "This app requires an internet connection to function properly. Please check your network settings and try again.",
+  "retry_connection": "Retry Connection",
+  "no_connection_still": "No internet connection detected. Please check your network settings."
 } 

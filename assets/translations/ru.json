@@ -81,8 +81,11 @@
   "som_added": "СОМ успешно добавлен",
   "som_add_error": "Ошибка при добавлении СОМ",
   "user_settings": "Настройки пользователя",
+  "login": "Логин",
   "username": "Имя пользователя",
   "password": "Пароль",
+  "remember_me": "Запомнить меня",
+  "login_button": "Войти",
   "select_role": "Выберите роль",
   "user_role": "Роль пользователя",
   "export_settings": "Настройки экспорта",
@@ -104,7 +107,7 @@
   "buy_foreign_currency": "Покупка иностранной валюты",
   "sell_foreign_currency": "Продажа иностранной валюты",
   "foreign_currency_value_breakdown": "Разбивка стоимости иностранной валюты",
-  
+
   "exchange_rate": "Обменный курс",
   "operation_type": "Тип операции",
   "enter_buy_rate": "Введите курс покупки",
@@ -135,7 +138,7 @@
   "show_keypad": "Показать клавиатуру",
   "clear": "Очистить",
   "back": "Назад",
-  
+
   "transaction_history": "История транзакций",
   "search_transactions": "Поиск транзакций...",
   "filter_history": "Фильтр истории",
@@ -178,7 +181,7 @@
   "avg_sale_rate": "Средний курс продажи",
   "total_earned": "Всего заработано",
   "profit": "Прибыль",
-  
+
   "day": "День",
   "week": "Неделя",
   "month": "Месяц",

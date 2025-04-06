@@ -147,7 +147,7 @@
   "to": "До",
   "all_currencies": "Все валюты",
   "all_types": "Все типы",
-  "reset_filters": "Сбросить фильтры",
+  "reset_filters": "Сбросить",
   "apply": "Применить",
   "delete_transaction": "Удалить транзакцию",
   "delete_transaction_confirm": "Вы уверены, что хотите удалить эту транзакцию {type}?",

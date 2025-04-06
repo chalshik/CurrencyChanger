@@ -43,8 +43,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
   @override
   void initState() {
     super.initState();
-    _fromDateController.text = DateFormat('dd-MM-yy').format(_fromDate);
-    _toDateController.text = DateFormat('dd-MM-yy').format(_toDate);
+    _fromDateController.text = DateFormat('dd/MM/yy').format(_fromDate);
+    _toDateController.text = DateFormat('dd/MM/yy').format(_toDate);
     _loadFilters();
     _loadHistory();
     _searchController.addListener(_filterEntries);
@@ -112,8 +112,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
     });
 
     try {
-      final fromDate = DateFormat('dd-MM-yy').parse(_fromDateController.text);
-      final toDate = DateFormat('dd-MM-yy').parse(_toDateController.text);
+      final fromDate = DateFormat('dd/MM/yy').parse(_fromDateController.text);
+      final toDate = DateFormat('dd/MM/yy').parse(_toDateController.text);
 
       final adjustedToDate = DateTime(
         toDate.year,
@@ -178,10 +178,10 @@ class _HistoryScreenState extends State<HistoryScreen> {
       setState(() {
         if (isFromDate) {
           _fromDate = picked;
-          _fromDateController.text = DateFormat('dd-MM-yy').format(picked);
+          _fromDateController.text = DateFormat('dd/MM/yy').format(picked);
         } else {
           _toDate = picked;
-          _toDateController.text = DateFormat('dd-MM-yy').format(picked);
+          _toDateController.text = DateFormat('dd/MM/yy').format(picked);
         }
       });
       _loadHistory();
@@ -194,8 +194,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
     setState(() {
       _fromDate = DateTime.now().subtract(const Duration(days: 30));
       _toDate = DateTime.now();
-      _fromDateController.text = DateFormat('dd-MM-yy').format(_fromDate);
-      _toDateController.text = DateFormat('dd-MM-yy').format(_toDate);
+      _fromDateController.text = DateFormat('dd/MM/yy').format(_fromDate);
+      _toDateController.text = DateFormat('dd/MM/yy').format(_toDate);
       _selectedCurrency = null;
       _selectedOperationType = null;
     });
@@ -286,7 +286,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
     _editQuantityController.text = entry.quantity.toStringAsFixed(2);
     _editRateController.text = entry.rate.toStringAsFixed(2);
     _editDateController.text = DateFormat(
-      'dd-MM-yyyy HH:mm',
+      'dd/MM/yy HH:mm',
     ).format(entry.createdAt);
     _editOperationType = entry.operationType;
     _editCurrencyCode = entry.currencyCode;
@@ -418,7 +418,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                   time.minute,
                                 );
                                 _editDateController.text = DateFormat(
-                                  'dd-MM-yyyy HH:mm',
+                                  'dd/MM/yy HH:mm',
                                 ).format(selectedDate);
                               });
                             }
@@ -445,33 +445,42 @@ class _HistoryScreenState extends State<HistoryScreen> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       TextButton(
+                        onPressed: () {
+                          Navigator.pop(context);
+                          _resetFilters();
+                        },
+                        child: Text(_getTranslatedText("reset_filters")),
+                      ),
+                      TextButton(
                         onPressed: () => Navigator.pop(context),
                         child: Text(_getTranslatedText("cancel")),
                       ),
-                      ElevatedButton(
-                        onPressed: () async {
-                          final updatedEntry = HistoryModel(
-                            id: entry.id,
-                            currencyCode:
-                                isDeposit ? entry.currencyCode : _editCurrencyCode!,
-                            operationType:
-                                isDeposit ? 'Deposit' : _editOperationType!,
-                            rate:
-                                isDeposit
-                                    ? 1.0
-                                    : double.parse(_editRateController.text),
-                            quantity: double.parse(_editQuantityController.text),
-                            total:
-                                isDeposit
-                                    ? double.parse(_editQuantityController.text)
-                                    : double.parse(_editRateController.text) *
-                                        double.parse(_editQuantityController.text),
-                            createdAt: selectedDate,
-                          );
-
-                          _saveEditedEntry(entry, updatedEntry);
-                        },
-                        child: Text(_getTranslatedText("save")),
+                      Container(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(8),
+                          gradient: LinearGradient(
+                            colors: [Colors.blue.shade400, Colors.blue.shade700],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                        ),
+                        child: ElevatedButton(
+                          onPressed: () {
+                            Navigator.pop(context);
+                            _loadHistory();
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.transparent,
+                            shadowColor: Colors.transparent,
+                            padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            minimumSize: Size(50, 36),
+                            elevation: 0,
+                          ),
+                          child: Text(
+                            _getTranslatedText("apply"),
+                            style: TextStyle(color: Colors.white),
+                          ),
+                        ),
                       ),
                     ],
                   ),
@@ -516,10 +525,13 @@ class _HistoryScreenState extends State<HistoryScreen> {
                   decoration: InputDecoration(
                     hintText: _getTranslatedText("search_transactions"),
                     border: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                    focusedBorder: InputBorder.none,
+                    errorBorder: InputBorder.none,
+                    disabledBorder: InputBorder.none,
                     hintStyle: TextStyle(color: Colors.white.withOpacity(0.7)),
-                    contentPadding: EdgeInsets.zero,
-                    fillColor: Colors.blue.shade700,
-                    filled: true,
+                    contentPadding: EdgeInsets.all(8.0),
+                    filled: false,
                   ),
                   style: TextStyle(color: Colors.white),
                   cursorColor: Colors.white,
@@ -562,7 +574,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
     return Row(
       children: [
         Expanded(
-          flex: 3,
+          flex: 4,
           child: TextField(
             controller: _fromDateController,
             style: const TextStyle(fontSize: 14),
@@ -570,7 +582,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
               labelText: _getTranslatedText("from"),
               prefixIcon: const Icon(Icons.calendar_today, size: 18),
               contentPadding: const EdgeInsets.symmetric(
-                horizontal: 8,
+                horizontal: 12,
                 vertical: 10,
               ),
               isDense: true,
@@ -585,7 +597,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
         ),
         const SizedBox(width: 8),
         Expanded(
-          flex: 3,
+          flex: 4,
           child: TextField(
             controller: _toDateController,
             style: const TextStyle(fontSize: 14),
@@ -593,7 +605,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
               labelText: _getTranslatedText("to"),
               prefixIcon: const Icon(Icons.calendar_today, size: 18),
               contentPadding: const EdgeInsets.symmetric(
-                horizontal: 8,
+                horizontal: 12,
                 vertical: 10,
               ),
               isDense: true,
@@ -701,7 +713,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
               labelText: _getTranslatedText("from"),
               prefixIcon: const Icon(Icons.calendar_today, size: 18),
               contentPadding: const EdgeInsets.symmetric(
-                horizontal: 8,
+                horizontal: 12,
                 vertical: 10,
               ),
               isDense: true,
@@ -724,7 +736,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
               labelText: _getTranslatedText("to"),
               prefixIcon: const Icon(Icons.calendar_today, size: 18),
               contentPadding: const EdgeInsets.symmetric(
-                horizontal: 8,
+                horizontal: 12,
                 vertical: 10,
               ),
               isDense: true,
@@ -861,7 +873,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
           ],
           rows:
               _filteredEntries.map((entry) {
-                final dateFormat = DateFormat('dd-MM-yyyy HH:mm');
+                final dateFormat = DateFormat('dd-MM-yy HH:mm');
                 final formattedDate = dateFormat.format(entry.createdAt);
                 final backgroundColor =
                     entry.operationType == 'Purchase'
@@ -939,7 +951,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
       itemBuilder: (context, index) {
         final entry = _filteredEntries[index];
-        final dateFormat = DateFormat('dd-MM-yyyy HH:mm');
+        final dateFormat = DateFormat('dd-MM-yy HH:mm');
         final formattedDate = dateFormat.format(entry.createdAt);
 
         // Choose background color based on operation type
@@ -1207,9 +1219,11 @@ class _HistoryScreenState extends State<HistoryScreen> {
               ),
               _buildStatItem(
                 _getTranslatedText("date_range"),
-                '${_fromDateController.text} - ${_toDateController.text}',
+                DateFormat('dd/MM/yy').format(_fromDate) + 
+                ' - ' + 
+                DateFormat('dd/MM/yy').format(_toDate),
                 Icons.date_range,
-                fontSize: 12,
+                fontSize: 11,
               ),
             ],
           ),
@@ -1321,10 +1335,16 @@ class _HistoryScreenState extends State<HistoryScreen> {
                             Expanded(
                               child: TextFormField(
                                 controller: _fromDateController,
+                                style: TextStyle(fontSize: 15.5),
                                 decoration: InputDecoration(
                                   labelText: _getTranslatedText("from"),
-                                  suffixIcon: Icon(Icons.calendar_today),
+                                  labelStyle: TextStyle(fontSize: 16),
+                                  suffixIcon: Icon(Icons.calendar_today, size: 20),
                                   border: OutlineInputBorder(),
+                                  contentPadding: EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 10,
+                                  ),
                                 ),
                                 readOnly: true,
                                 onTap: () {
@@ -1336,10 +1356,16 @@ class _HistoryScreenState extends State<HistoryScreen> {
                             Expanded(
                               child: TextFormField(
                                 controller: _toDateController,
+                                style: TextStyle(fontSize: 15.5),
                                 decoration: InputDecoration(
                                   labelText: _getTranslatedText("to"),
-                                  suffixIcon: Icon(Icons.calendar_today),
+                                  labelStyle: TextStyle(fontSize: 12),
+                                  suffixIcon: Icon(Icons.calendar_today, size: 20),
                                   border: OutlineInputBorder(),
+                                  contentPadding: EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 10,
+                                  ),
                                 ),
                                 readOnly: true,
                                 onTap: () {
@@ -1427,41 +1453,48 @@ class _HistoryScreenState extends State<HistoryScreen> {
                     ),
                   ),
                   actions: [
-                    TextButton(
-                      onPressed: () {
-                        Navigator.pop(context);
-                        _resetFilters();
-                      },
-                      child: Text(_getTranslatedText("reset_filters")),
-                    ),
-                    TextButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: Text(_getTranslatedText("cancel")),
-                    ),
-                    Container(
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(8),
-                        gradient: LinearGradient(
-                          colors: [Colors.blue.shade400, Colors.blue.shade700],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        TextButton(
+                          onPressed: () {
+                            Navigator.pop(context);
+                            _resetFilters();
+                          },
+                          child: Text(_getTranslatedText("reset_filters")),
                         ),
-                      ),
-                      child: ElevatedButton(
-                        onPressed: () {
-                          Navigator.pop(context);
-                          _loadHistory();
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.transparent,
-                          shadowColor: Colors.transparent,
-                          elevation: 0,
+                        TextButton(
+                          onPressed: () => Navigator.pop(context),
+                          child: Text(_getTranslatedText("cancel")),
                         ),
-                        child: Text(
-                          _getTranslatedText("apply"),
-                          style: TextStyle(color: Colors.white),
+                        Container(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(8),
+                            gradient: LinearGradient(
+                              colors: [Colors.blue.shade400, Colors.blue.shade700],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                          ),
+                          child: ElevatedButton(
+                            onPressed: () {
+                              Navigator.pop(context);
+                              _loadHistory();
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.transparent,
+                              shadowColor: Colors.transparent,
+                              padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              minimumSize: Size(50, 36),
+                              elevation: 0,
+                            ),
+                            child: Text(
+                              _getTranslatedText("apply"),
+                              style: TextStyle(color: Colors.white),
+                            ),
+                          ),
                         ),
-                      ),
+                      ],
                     ),
                   ],
                 ),

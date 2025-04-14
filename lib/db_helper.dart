@@ -19,6 +19,9 @@ class DatabaseHelper {
   static DateTime _lastCurrenciesLoadTime = DateTime(2000); // Set to old date initially
   static bool _currenciesCacheDirty = true; // Flag to indicate if cache needs refresh
 
+  // Add public getter for last load time
+  DateTime get lastCurrenciesLoadTime => _lastCurrenciesLoadTime;
+
   // Private constructor
   DatabaseHelper._init();
 
@@ -159,6 +162,10 @@ class DatabaseHelper {
         };
         await currencyRef.set(currencyData);
       }
+      
+      // Invalidate cache
+      invalidateCurrenciesCache();
+      debugPrint('Currency created/updated and cache invalidated: ${currency.code}');
 
       return currency;
     } catch (e) {
@@ -200,6 +207,10 @@ class DatabaseHelper {
 
       // Insert new currency (set data in Firestore)
       await currencyRef.set(currencyData);
+      
+      // Invalidate cache
+      invalidateCurrenciesCache();
+      debugPrint('Currency inserted and cache invalidated: ${currency.code}');
     } catch (e) {
       debugPrint('Error in insertCurrency: $e');
       rethrow;
@@ -216,6 +227,10 @@ class DatabaseHelper {
 
       // Delete the currency document
       await currencyRef.delete();
+      
+      // Invalidate cache
+      invalidateCurrenciesCache();
+      debugPrint('Currency deleted and cache invalidated: $code');
     } catch (e) {
       debugPrint('Error in deleteCurrency: $e');
       rethrow;
@@ -224,7 +239,14 @@ class DatabaseHelper {
 
   Future<List<CurrencyModel>> getAllCurrencies() async {
     try {
-      // Get all currencies from Firestore
+      // Check if we can use the cached data
+      if (!shouldRefreshCurrenciesCache()) {
+        debugPrint('Using cached currencies data (${_currenciesCache.length} currencies)');
+        return _currenciesCache;
+      }
+
+      // Need to fetch fresh data
+      debugPrint('Fetching fresh currencies data from Firestore');
       final snapshot = await _firestore.collection(collectionCurrencies).get();
 
       // Convert Firestore documents to CurrencyModel objects
@@ -233,9 +255,20 @@ class DatabaseHelper {
               .map((doc) => CurrencyModel.fromFirestore(doc.data(), doc.id))
               .toList();
 
+      // Update cache
+      _currenciesCache = currencies;
+      _lastCurrenciesLoadTime = DateTime.now();
+      _currenciesCacheDirty = false;
+      
+      debugPrint('Updated currencies cache with ${currencies.length} currencies');
       return currencies;
     } catch (e) {
       debugPrint('Error getting all currencies: $e');
+      // If there was an error but we have cached data, return it
+      if (_currenciesCache.isNotEmpty) {
+        debugPrint('Returning cached currencies despite error');
+        return _currenciesCache;
+      }
       return [];
     }
   }
@@ -250,6 +283,10 @@ class DatabaseHelper {
 
       // Update the currency document with the new data
       await currencyRef.update(currency.toMap());
+      
+      // Invalidate cache
+      invalidateCurrenciesCache();
+      debugPrint('Currency updated and cache invalidated: ${currency.code}');
     } catch (e) {
       debugPrint('Error in updateCurrency: $e');
       rethrow;
@@ -291,6 +328,10 @@ class DatabaseHelper {
           });
         }
       });
+      
+      // Invalidate cache after quantity update
+      invalidateCurrenciesCache();
+      debugPrint('Currency quantity updated and cache invalidated: $currencyCode');
     } catch (e) {
       debugPrint('Error updating currency quantity: $e');
       rethrow;
@@ -423,6 +464,10 @@ class DatabaseHelper {
         'total': amount,
         'created_at': DateTime.now().toIso8601String(),
       });
+      
+      // Invalidate cache after balance update
+      invalidateCurrenciesCache();
+      debugPrint('SOM balance updated and cache invalidated');
     } catch (e) {
       debugPrint('Error in addToSomBalance: $e');
       rethrow;
@@ -588,6 +633,10 @@ class DatabaseHelper {
           'created_at': DateTime.now().toIso8601String(),
         });
       });
+      
+      // Invalidate currencies cache after exchange
+      invalidateCurrenciesCache();
+      debugPrint('Currency exchange completed and cache invalidated');
     } catch (e) {
       debugPrint('Error in performCurrencyExchange: $e');
       rethrow;
@@ -2267,7 +2316,9 @@ class DatabaseHelper {
           'updated_at': DateTime.now().toIso8601String(),
         });
 
-        debugPrint('Currency $code quantity updated to: $newQuantity');
+        // Invalidate cache after quantity adjustment
+        invalidateCurrenciesCache();
+        debugPrint('Currency $code quantity adjusted and cache invalidated');
         return true;
       } else {
         // If currency doesn't exist, create it with the given amount (if adding)
@@ -2279,7 +2330,10 @@ class DatabaseHelper {
             'default_buy_rate': 0.0,
             'default_sell_rate': 0.0,
           });
-          debugPrint('Currency $code created with quantity: $amount');
+          
+          // Invalidate cache after creating new currency
+          invalidateCurrenciesCache();
+          debugPrint('Currency $code created with quantity: $amount and cache invalidated');
           return true;
         } else {
           debugPrint('Cannot subtract from non-existent currency: $code');

@@ -5,6 +5,7 @@ import '../providers/language_provider.dart';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:intl/intl.dart';
+import 'package:syncfusion_flutter_charts/charts.dart';
 
 class StatisticsScreen extends StatefulWidget {
   const StatisticsScreen({super.key});
@@ -1015,64 +1016,117 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
     currenciesWithProfit.sort((a, b) => 
         (b['profit'] as double).abs().compareTo((a['profit'] as double).abs()));
     
+    // Calculate total profit (positive and negative)
+    final totalPositiveProfit = currenciesWithProfit
+        .where((c) => (c['profit'] as double) > 0)
+        .fold<double>(0, (sum, c) => sum + (c['profit'] as double));
+        
+    final totalNegativeProfit = currenciesWithProfit
+        .where((c) => (c['profit'] as double) < 0)
+        .fold<double>(0, (sum, c) => sum + (c['profit'] as double));
+    
+    final totalProfitText = totalPositiveProfit + totalNegativeProfit;
+    
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Column(
         children: [
           SizedBox(
-            height: 250,
-            child: _ProfitPieChart(
-              currencies: currenciesWithProfit,
-              isDarkMode: isDarkMode,
-            ),
-          ),
-          const SizedBox(height: 16),
-          Wrap(
-            spacing: 16,
-            runSpacing: 8,
-            alignment: WrapAlignment.center,
-            children: currenciesWithProfit.asMap().entries.map((entry) {
-              final index = entry.key;
-              final currency = entry.value;
-              final profit = currency['profit'] as double;
-              final isPositive = profit >= 0;
-              
-              // Assign a color based on index and profit sign
-              final hue = 120 + (index * 50) % 240;
-              final color = profit >= 0 
-                  ? (isDarkMode
-                      ? HSLColor.fromAHSL(1.0, hue.toDouble(), 0.8, 0.3).toColor().withOpacity(0.9)
-                      : HSLColor.fromAHSL(1.0, hue.toDouble(), 0.7, 0.5).toColor().withOpacity(0.9))
-                  : (isDarkMode
-                      ? HSLColor.fromAHSL(1.0, 0.0, 0.8, 0.3).toColor().withOpacity(0.9)
-                      : HSLColor.fromAHSL(1.0, 0.0, 0.7, 0.5).toColor().withOpacity(0.9)); // Red for negative
-                  
-              return Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 16,
-                    height: 16,
-                    decoration: BoxDecoration(
-                      color: color,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    '${currency['currency']}: ${formatProfit(profit)}',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.bold,
-                      color: isPositive 
+            height: 350, // Increased height for better visualization
+            child: SfCircularChart(
+              margin: const EdgeInsets.all(10),
+              legend: Legend(
+                isVisible: true,
+                position: LegendPosition.bottom,
+                overflowMode: LegendItemOverflowMode.wrap,
+                textStyle: TextStyle(
+                  fontSize: 12,
+                  color: isDarkMode ? Colors.grey.shade300 : Colors.grey.shade700,
+                ),
+              ),
+              annotations: <CircularChartAnnotation>[
+                CircularChartAnnotation(
+                  widget: Container(
+                    child: Text(
+                      '${totalProfitText.toStringAsFixed(2)}\nSOM',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: totalProfitText >= 0 
                           ? (isDarkMode ? Colors.cyan.shade300 : Colors.green.shade800)
                           : (isDarkMode ? Colors.pink.shade300 : Colors.red.shade800),
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16, // Increased font size
+                      ),
                     ),
                   ),
-                ],
-              );
-            }).toList(),
+                ),
+              ],
+              series: <CircularSeries>[
+                DoughnutSeries<Map<String, dynamic>, String>(
+                  dataSource: currenciesWithProfit,
+                  xValueMapper: (data, _) => data['currency'] as String,
+                  yValueMapper: (data, _) => (data['profit'] as double).abs(),
+                  pointColorMapper: (data, index) {
+                    final profit = data['profit'] as double;
+                    final hue = 120 + (index * 50) % 240;
+                    return profit >= 0 
+                      ? (isDarkMode
+                          ? HSLColor.fromAHSL(1.0, hue.toDouble(), 0.8, 0.3).toColor()
+                          : HSLColor.fromAHSL(1.0, hue.toDouble(), 0.7, 0.5).toColor())
+                      : (isDarkMode
+                          ? HSLColor.fromAHSL(1.0, 0.0, 0.8, 0.3).toColor()
+                          : HSLColor.fromAHSL(1.0, 0.0, 0.7, 0.5).toColor());
+                  },
+                  dataLabelSettings: DataLabelSettings(
+                    isVisible: true,
+                    labelPosition: ChartDataLabelPosition.outside,
+                    connectorLineSettings: const ConnectorLineSettings(
+                      type: ConnectorType.line,
+                      length: '15%', // Longer connector lines
+                    ),
+                    labelIntersectAction: LabelIntersectAction.shift,
+                    textStyle: TextStyle(
+                      fontSize: 13, // Increased font size
+                      fontWeight: FontWeight.w500,
+                      color: isDarkMode ? Colors.white : Colors.black,
+                    ),
+                    useSeriesColor: true,
+                    builder: (data, point, series, pointIndex, seriesIndex) {
+                      // Custom builder to show value along with currency code
+                      final currencyData = data as Map<String, dynamic>;
+                      final currencyCode = currencyData['currency'] as String;
+                      final profit = currencyData['profit'] as double;
+                      return Container(
+                        padding: const EdgeInsets.all(4),
+                        child: Text(
+                          '$currencyCode: ${profit.abs().toStringAsFixed(2)}',
+                          style: TextStyle(
+                            color: isDarkMode ? Colors.white : Colors.black,
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                  enableTooltip: true,
+                  innerRadius: '60%',
+                  radius: '85%', // Slightly smaller to leave more room for labels
+                ),
+              ],
+              tooltipBehavior: TooltipBehavior(
+                enable: true,
+                format: 'point.x: point.y SOM',
+                color: isDarkMode ? Colors.grey.shade800 : Colors.white,
+                textStyle: TextStyle(
+                  color: isDarkMode ? Colors.white : Colors.black,
+                ),
+              ),
+            ),
           ),
+          
+          // Add extra spacing between pie chart and legend
+          const SizedBox(height: 24),
         ],
       ),
     );
@@ -1147,142 +1201,4 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
       }
     });
   }
-}
-
-class _ProfitPieChart extends StatelessWidget {
-  final List<Map<String, dynamic>> currencies;
-  final bool isDarkMode;
-  
-  const _ProfitPieChart({required this.currencies, required this.isDarkMode});
-  
-  @override
-  Widget build(BuildContext context) {
-    return CustomPaint(
-      size: const Size(double.infinity, 250),
-      painter: _PieChartPainter(currencies, isDarkMode),
-    );
-  }
-}
-
-class _PieChartPainter extends CustomPainter {
-  final List<Map<String, dynamic>> currencies;
-  final bool isDarkMode;
-  
-  _PieChartPainter(this.currencies, this.isDarkMode);
-  
-  @override
-  void paint(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height / 2);
-    final radius = math.min(size.width, size.height) / 2.2;
-    
-    // Calculate total absolute profit for pie segment sizing
-    final totalProfit = currencies.fold<double>(
-      0, 
-      (sum, currency) => sum + (currency['profit'] as double).abs()
-    );
-    
-    if (totalProfit <= 0) return; // Nothing to draw
-    
-    double startAngle = 0;
-    
-    for (int i = 0; i < currencies.length; i++) {
-      final currency = currencies[i];
-      final profit = currency['profit'] as double;
-      
-      // Calculate segment angle
-      final sweepAngle = 2 * math.pi * profit.abs() / totalProfit;
-      
-      // Assign a color based on index and profit sign - darker for dark mode
-      final hue = 120 + (i * 50) % 240;
-      final color = profit >= 0 
-          ? (isDarkMode
-              ? HSLColor.fromAHSL(1.0, hue.toDouble(), 0.8, 0.3).toColor().withOpacity(0.9)
-              : HSLColor.fromAHSL(1.0, hue.toDouble(), 0.7, 0.5).toColor().withOpacity(0.9))
-          : (isDarkMode
-              ? HSLColor.fromAHSL(1.0, 0.0, 0.8, 0.3).toColor().withOpacity(0.9)
-              : HSLColor.fromAHSL(1.0, 0.0, 0.7, 0.5).toColor().withOpacity(0.9)); // Red for negative
-      
-      final paint = Paint()
-        ..style = PaintingStyle.fill
-        ..color = color;
-      
-      // Draw pie segment
-      canvas.drawArc(
-        Rect.fromCircle(center: center, radius: radius),
-        startAngle,
-        sweepAngle,
-        true,
-        paint,
-      );
-      
-      // Draw a thin border around the segment - darker in dark mode
-      final borderPaint = Paint()
-        ..style = PaintingStyle.stroke
-        ..color = isDarkMode ? Colors.grey.shade800 : Colors.white
-        ..strokeWidth = 2;
-        
-      canvas.drawArc(
-        Rect.fromCircle(center: center, radius: radius),
-        startAngle,
-        sweepAngle,
-        true,
-        borderPaint,
-      );
-      
-      // Update start angle for next segment
-      startAngle += sweepAngle;
-    }
-    
-    // Draw a center circle with fill for a donut chart effect
-    final centerCirclePaint = Paint()
-      ..style = PaintingStyle.fill
-      ..color = isDarkMode ? Colors.grey.shade900 : Colors.white;
-      
-    canvas.drawCircle(
-      center,
-      radius * 0.5, // Inner radius is half of outer radius
-      centerCirclePaint,
-    );
-    
-    // Draw total profit in the center
-    final totalPositiveProfit = currencies
-        .where((c) => (c['profit'] as double) > 0)
-        .fold<double>(0, (sum, c) => sum + (c['profit'] as double));
-        
-    final totalNegativeProfit = currencies
-        .where((c) => (c['profit'] as double) < 0)
-        .fold<double>(0, (sum, c) => sum + (c['profit'] as double));
-    
-    final totalProfitText = totalPositiveProfit + totalNegativeProfit;
-    
-    final textSpan = TextSpan(
-      text: '${totalProfitText.toStringAsFixed(2)}\nSOM',
-      style: TextStyle(
-        color: totalProfitText >= 0 
-            ? (isDarkMode ? Colors.cyan.shade300 : Colors.green.shade800)
-            : (isDarkMode ? Colors.pink.shade300 : Colors.red.shade800),
-        fontSize: 16,
-        fontWeight: FontWeight.bold,
-      ),
-    );
-    
-    final textPainter = TextPainter(
-      text: textSpan,
-      textDirection: ui.TextDirection.ltr,
-      textAlign: TextAlign.center,
-    );
-    
-    textPainter.layout();
-    
-    // Center the text
-    final textOffset = Offset(
-      center.dx - textPainter.width / 2,
-      center.dy - textPainter.height / 2,
-    );
-    
-    textPainter.paint(canvas, textOffset);
-  }
-  
-  @override
-  bool shouldRepaint(CustomPainter oldDelegate) => true;
 }
